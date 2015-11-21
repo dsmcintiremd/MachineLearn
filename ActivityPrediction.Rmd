@@ -1,0 +1,74 @@
+---
+title: "Predicting Activity Quality Machine Learning"
+output: html_document
+---
+
+#Executive Summary
+This paper documents the creation and running of a random forest machine learning algorithm to predict whether a subject performed certain weight lifting exercises correctly or not. It also details the expected out-of-sample rate and how it was determined. 
+
+#Data Sourcing and Exploration
+The data was downloaded from the following URL, http://groupware.les.inf.puc-rio.br/har#weight_lifting_exercises (see citation at end of report), and loaded into data frames. 
+```{r, message=FALSE, echo=FALSE, results='hide'}
+library(caret)
+library(dplyr)
+```
+```{r}
+WLE_train <- read.csv("pml-training.csv")
+WLE_test  <- read.csv("pml-testing.csv")
+```
+The training set has 19,622 observations with 160 variables and contains activity monitoring data on six people performing weight lifting exercises. The outcome variable, classe, indicates whether the exercise was performed according to specification (class A) or incorrectly (classes B thru E). 
+
+#Validate Sets and Data Cleaning 
+The training data set was divided into a training set (75%) and into validation data set (25%). The out-of-sample error rate will be estimated using the validation data set.
+```{r}
+inTrain <- createDataPartition(y=WLE_train$classe, p=0.75, list=FALSE)
+WLE_train1    <- WLE_train[ inTrain, ]
+WLE_validate1 <- WLE_train[-inTrain, ]
+```
+
+The number of potential covariates, 160, is very large so some analysis was conducted to reduce the number. The column new_window="yes" signifies rows where additional measurements were taken (e.g., kertosis_roll_belt). These columns are blank for 98% of the observations thus were deemed not important. A review of the test set also discovered that about 100 columns had no or NA values, thus they were removed. Finally four columns were judged to not have predictive value on the outcome and were removed.
+```{r}
+# Remove columns from training set where values are NA in test set
+WLE_train1    <- WLE_train1   [ , !apply(is.na(WLE_test), 2, all) ]
+WLE_validate1 <- WLE_validate1[ , !apply(is.na(WLE_test), 2, all) ]
+WLE_test1     <- WLE_test [ , !apply(is.na(WLE_test), 2, all) ]
+# remove additional columns 
+rmveCols <- c("X", "user_name","cvtd_timestamp","new_window")
+WLE_train1    <- WLE_train1    [ , !(names(WLE_train1) %in% rmveCols)]
+WLE_validate1 <- WLE_validate1 [ , !(names(WLE_validate1) %in% rmveCols)]
+WLE_test1     <- WLE_test1     [ , !(names(WLE_test1) %in% rmveCols)]
+```
+
+#Machine Learning Algorithm: Random Forest
+Since the outcome is a factor variable with five possible outcomes (classification), a random forest model was selected. Part of the train control parameters is to conduct cross-validation using resampling (method="cv"). This cross-validation is done as part of the random forest model. 
+```{r,cache=TRUE,cache.lazy=TRUE}
+trnCntrl <- trainControl(method="cv", allowParallel=TRUE)
+WLE_ModelFit <- train (classe ~ . , method="rf", data=WLE_train1,  trControl=trnCntrl)
+```
+
+# Cross-Validation and Estimated Out-of-Sample Error Rate
+The random forest model was run against the validation test set for cross validation. A confusion matrix was created to estimate the out-of-sample error rate.
+```{r}
+WLE_Pred_Val <- predict (WLE_ModelFit, WLE_validate1)
+confusionMatrix(WLE_validate1$classe, WLE_Pred_Val)
+```
+The confusion matrix shows almost perfect prediction, an estimated accuracy of 0.9998. The statistics by outcome (e.g., sensitivity, specificity, etc.) shows similar results. This shows the model should generalize well to the given test set. 
+
+#Predicting with Test Data
+The fitted random forest model was then run again the test set. A vector of the predictions was created and output to 20 files. Code to product files courtsety of Jeffery Leeks.
+
+```{r}
+WLE_Pred_Test <- predict (WLE_ModelFit, WLE_test1)
+
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(WLE_Pred_Test)
+```
+Citation: 
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+---------------------[DSM.MV.20151121.1]------------------------
